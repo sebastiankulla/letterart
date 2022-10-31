@@ -9,6 +9,6 @@ setup(
     author_email="sebastiankulla90@gmail.com",
     description="A tool to make art out of a memorable image and a great backstory.",
     packages=find_packages(),
-    install_requires=['Pillow', 'svgpathtools],
+    install_requires=['Pillow', 'svgpathtools'],
     package_data={'letterart': ['data/*.svg']},
 )
