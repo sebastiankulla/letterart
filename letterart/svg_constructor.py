@@ -1,5 +1,5 @@
 from .dictionary import svg_dict
-from typing import Optional
+from typing import Optional, Tuple
 from PIL import Image, ImageEnhance
 
 
@@ -69,7 +69,7 @@ class Converter:
         """
         return footer
 
-    def get_projected_center(self, letter) -> tuple[int, int]:
+    def get_projected_center(self, letter) -> Tuple[int, int]:
         abs_center_x = round(letter.abs_center[0] / self.config.svg_scaling * self.config.img_pixel_per_mm) % (
                 self.config.picture_dimension_x_mm * self.config.img_pixel_per_mm)
         abs_center_y = round(letter.abs_center[1] / self.config.svg_scaling * self.config.img_pixel_per_mm) % (
@@ -127,7 +127,7 @@ class Converter:
                 pass
         return length
 
-    def get_idx_and_space_size(self, words_list: list, start_idx: int) -> tuple[Optional[int], Optional[int]]:
+    def get_idx_and_space_size(self, words_list: list, start_idx: int) -> Tuple[Optional[int], Optional[int]]:
         num_words = 0
         previous_length = 0
         length = -self.config.backspace
