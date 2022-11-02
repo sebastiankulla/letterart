@@ -8,7 +8,9 @@ import re
 from fontTools import ttx
 
 SVG_LETTER_DICT = {",": "comma", ":": "colon", ".": "period", "0": "zero", "1": "one", "2": "two", "3": "three",
-                   "4": "four", "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"}
+                   "4": "four", "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine", "ß": "uni1E9E",
+                   "Ü": "Udieresis", "Ö": "Odieresis", "Ä": "Adieresis", "ü": "udieresis", "ö": "odieresis",
+                   "ä": "adieresis"}
 
 
 class SVGCommands(Enum):
@@ -147,7 +149,7 @@ class Glyph:
         new_contour = Contour()
         new_contour.add_svg_instructions(self.contours[0].svg_instructions)
         for idx_contour in range(1, len(self.contours)):
-            entry_x, entry_y = self.contours[idx_contour-1].svg_instructions[0].coordinates
+            entry_x, entry_y = self.contours[idx_contour - 1].svg_instructions[0].coordinates
             contour = self.contours[idx_contour]
             new_x = contour.svg_instructions[0].coordinates[0] - entry_x
             new_y = contour.svg_instructions[0].coordinates[1] - entry_y
@@ -194,7 +196,6 @@ class Glyph:
         self.viewbox[3] = self.initial_viewbox[3] + y_coord
         for contour in self.contours:
             contour.move_to(x_coord, y_coord)
-
 
     def anchor_contours(self):
         for contour in self.contours:
@@ -323,6 +324,7 @@ class Alphabet:
             for contour in glyph.contours:
                 svg_body += f"""<path d="{contour.text}" fill="{contour.fill}" stroke="{contour.stroke}" transform="{contour.transform}" stroke-width="{contour.stroke_width}"/>\n"""
             svg_body += f"""<circle cx="{prev_x}" cy="{prev_y}" r="25" fill="none" stroke="red" stroke-width="10" />\n"""
+            svg_body += f"""<text x="{prev_x}" y="{prev_y}" class="heavy" fill="black" font-size="230px"> {glyph.name}</text>"""
             prev_x += 1000
             if prev_x >= MAX_X:
                 prev_x = 0
