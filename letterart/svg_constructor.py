@@ -1,4 +1,3 @@
-from .dictionary import svg_dict
 from typing import Optional, Tuple
 from PIL import Image, ImageEnhance
 from .ttf_loader import Alphabet, extract_alphabet
@@ -7,6 +6,7 @@ from PIL import Image, ImageEnhance, ImageOps
 from copy import deepcopy
 import json
 from enum import Enum
+import os
 
 
 class Mode(Enum):
@@ -18,6 +18,7 @@ class Mode(Enum):
 class Config:
 
     def __init__(self, config_filename: Optional[str] = None):
+        self.config_filename = config_filename
         self.picture_dimension_x_mm: int = 210
         self.picture_dimension_y_mm: int = 297
         self.svg_scaling: int = 400
@@ -31,19 +32,24 @@ class Config:
         self.max_stroke_width: int = 120
         self.min_stroke_width: int = 20
         self.mode: Mode = Mode.fill
+        self.picture_name: str = ""
+        self.text_file_name: str =""
+        self.font: str = ""
 
         if config_filename is not None:
             with open(config_filename, 'r') as file:
                 self.json_config = json.load(file)
-            self.load_settings_from_json()
+
             self.load_mode_from_json()
+            self.load_settings_from_json()
+
 
     def load_settings_from_json(self):
         for key, value in self.json_config.items():
             try:
                 setattr(self, key, int(value))
             except Exception:
-                continue
+                setattr(self, key, value)
 
     def load_mode_from_json(self):
         json_mode = self.json_config.get("mode", None)
@@ -51,6 +57,7 @@ class Config:
             self.mode = Mode.fill
         else:
             self.mode = Mode(json_mode)
+            self.json_config.pop("mode")
 
     @property
     def max_x(self):
@@ -70,30 +77,33 @@ class Config:
 
 
 class Converter:
-    def __init__(self, image_path: str, text_path: str, font_path: str, config: Optional[Config] = Config()):
-        self.image_path = image_path
-        self.text_path = text_path
-        self.font_path = font_path
-        if font_path is None:
-            self.alphabet = svg_dict
-        else:
-            self.alphabet = extract_alphabet(font_path, flip_horizontally=True)
-
-        self.text_as_str = self.get_text()
+    def __init__(self, config: Optional[Config] = Config()):
         self.config = config
+        self.project_dir = os.path.dirname(self.config.config_filename)
+
+        self.image_path = os.path.join(self.project_dir, config.picture_name)
+        self.text_path = os.path.join(self.project_dir, config.text_file_name)
+        self.font_path = os.path.join(self.project_dir, config.font)
         self.image = self.get_and_prepare_image()
 
+        self.text_as_str = self.get_text()
+        self.alphabet = extract_alphabet(self.font_path, flip_horizontally=True)
+
+
+
     def get_text(self):
-        with open(self.text_path, 'r') as file:
+        with open(self.text_path, 'r', encoding="utf-8") as file:
             return file.read().replace('\n', ' ')
 
     def get_and_prepare_image(self):
         image = Image.open(self.image_path)
         if self.config.mode == Mode.grayscale:
             image = image.convert('L')
+        else:
+            image = image.convert('RGB')
 
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(self.config.contrast_enhance)
+        # enhancer = ImageEnhance.Contrast(image)
+        # image = enhancer.enhance(self.config.contrast_enhance)
 
         return image.resize((self.config.picture_dimension_x_mm * self.config.img_pixel_per_mm,
                              self.config.picture_dimension_y_mm * self.config.img_pixel_per_mm))
@@ -133,9 +143,9 @@ class Converter:
         abs_center_x, abs_center_y = self.get_projected_center(letter)
         color = self.image.getpixel((abs_center_x, abs_center_y))
         if isinstance(color, int):
-            color_scg = f"#{hex(color)[2:]}{hex(color)[2:]}{hex(color)[2:]}"
+            color_scg = f"#{color:02x}{color:02x}{color:02x}"
         else:
-            color_scg = f"#{hex(color[0])[2:]}{hex(color[1])[2:]}{hex(color[2])[2:]}"
+            color_scg = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
         letter.set_color(color_scg)
         letter.set_strokewidth(self.config.min_stroke_width)
 
@@ -248,6 +258,8 @@ class Converter:
     def save_file(self, destination: Optional[str] = "export.svg"):
         if not destination.endswith('.svg'):
             destination += '.svg'
+
+        destination = os.path.join(self.project_dir,destination)
 
         header = self.get_header()
         body = self.get_body2()
