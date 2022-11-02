@@ -5,22 +5,30 @@ from .ttf_loader import Alphabet, extract_alphabet
 from typing import Optional
 from PIL import Image, ImageEnhance, ImageOps
 from copy import deepcopy
+import json
 
 
 class Config:
-    picture_dimension_x_mm: int = 210
-    picture_dimension_y_mm: int = 297
-    svg_scaling: int = 400
-    padding_x_mm: int = 10
-    padding_y_mm: int = 10
-    space_x: int = 80
-    space_y: int = 1000
-    backspace: int = 350
-    img_pixel_per_mm: int = 1
-    contrast_enhance: float = 1.5
-    max_stroke_width: int = 120
-    min_stroke_width: int = 20
 
+    def __init__(self, config_filename: Optional[str] = None):
+        self.picture_dimension_x_mm: int = 210
+        self.picture_dimension_y_mm: int = 297
+        self.svg_scaling: int = 400
+        self.padding_x_mm: int = 10
+        self.padding_y_mm: int = 10
+        self.space_x: int = 80
+        self.space_y: int = 1000
+        self.backspace: int = 350
+        self.img_pixel_per_mm: int = 1
+        self.contrast_enhance: float = 1.5
+        self.max_stroke_width: int = 120
+        self.min_stroke_width: int = 20
+
+        if config_filename is not None:
+            with open(config_filename, 'r') as file:
+                content = json.load(file)
+            for key, value in content.items():
+                setattr(self, key, int(value))
 
     @property
     def max_x(self):
@@ -95,7 +103,7 @@ class Converter:
 
         color = self.image.getpixel((abs_center_x, abs_center_y))
         b = self.config.max_stroke_width
-        m = (self.config.min_stroke_width - b)/255
+        m = (self.config.min_stroke_width - b) / 255
         stroke_width = round(color * m + b)
         letter.set_strokewidth(stroke_width)
 
@@ -179,7 +187,7 @@ class Converter:
         while loc_y <= self.config.max_y:
             number_words, new_backspace = self.get_idx_and_space_size(words_list, start_idx)
             words_in_line_list = self.get_from_(words_list, start_idx, number_words)
-            start_idx = (start_idx + number_words) % (len(words_list)-1)
+            start_idx = (start_idx + number_words) % (len(words_list) - 1)
             word_in_line_str = " ".join(words_in_line_list)
             for letter in word_in_line_str:
                 if letter == " ":
@@ -206,7 +214,7 @@ class Converter:
             destination += '.svg'
 
         header = self.get_header()
-        body = self.get_body()
+        body = self.get_body2()
         footer = self.get_footer()
         with open(destination, 'w') as file:
             file.write(header)
