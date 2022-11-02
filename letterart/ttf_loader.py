@@ -1,6 +1,6 @@
 from __future__ import annotations
 from lxml import etree
-from typing import Optional
+from typing import Optional, List
 from enum import Enum
 from copy import deepcopy
 from functools import cache
@@ -18,6 +18,7 @@ class SVGCommands(Enum):
     Z = "Z"
     l = "l"
     q = "q"
+    m = "m"
 
 
 class TTFInstruction:
@@ -137,11 +138,25 @@ class Glyph:
         self.name = name
         self.viewbox = viewbox
         self.initial_viewbox = viewbox
-        self.contours: list[Contour] = []
+        self.contours: List[Contour] = []
         self.x_coord: int = 0
         self.y_coord: int = 0
 
-    def add_contours(self, contour_list: list[Contour]):
+    def merge_contours(self):
+
+        new_contour = Contour()
+        new_contour.add_svg_instructions(self.contours[0].svg_instructions)
+        for idx_contour in range(1, len(self.contours)):
+            entry_x, entry_y = self.contours[idx_contour-1].svg_instructions[0].coordinates
+            contour = self.contours[idx_contour]
+            new_x = contour.svg_instructions[0].coordinates[0] - entry_x
+            new_y = contour.svg_instructions[0].coordinates[1] - entry_y
+            new_contour.svg_instructions.append(SVGInstruction(SVGCommands.m, [new_x, new_y]))
+            for instruction_idx in range(1, len(contour.svg_instructions)):
+                new_contour.svg_instructions.append(contour.svg_instructions[instruction_idx])
+        self.contours = [new_contour]
+
+    def add_contours(self, contour_list: List[Contour]):
         self.contours.extend(contour_list)
 
     def __getitem__(self, item):
@@ -197,6 +212,10 @@ class Glyph:
         for contour in self.contours:
             contour.stroke_width = width
 
+    def set_color(self, color):
+        for contour in self.contours:
+            contour.fill = color
+
     @property
     def abs_center(self):
         xmin = self.viewbox[0]
@@ -217,6 +236,10 @@ class Alphabet:
         self.glyphs: list[Glyph] = []
         if filename is not None:
             self.glyphs = self.load_glyphs_from_file(filename)
+
+    def merge_contours(self):
+        for glyph in self.glyphs:
+            glyph.merge_contours()
 
     def load_glyphs_from_file(self, filename: str):
         tree = etree.parse(filename)
@@ -348,7 +371,6 @@ def extract_alphabet(filename: str, flip_horizontally: Optional[bool] = False,
     ttx.ttDump(filename, "temp.ttx", ttx.Options([], 1))
     alphabet = Alphabet()
     glyphs = load_ttx_file("temp.ttx")
-    # box_size = get_max_y()
 
     for glyph in glyphs:
         try:
@@ -364,6 +386,8 @@ def extract_alphabet(filename: str, flip_horizontally: Optional[bool] = False,
             new_glyph.add_contours(
                 get_contours(glyph_component, int(component.attrib["x"]), int(component.attrib["y"])))
         alphabet.glyphs.append(new_glyph)
+
+    alphabet.merge_contours()
     if flip_horizontally:
         alphabet.flip_horizontally()
     if flip_vertically:
@@ -373,14 +397,14 @@ def extract_alphabet(filename: str, flip_horizontally: Optional[bool] = False,
     return alphabet
 
 
-def get_contours(glyph: etree.Element, x_offset: int = 0, y_offset: int = 0) -> list[Contour]:
+def get_contours(glyph: etree.Element, x_offset: int = 0, y_offset: int = 0) -> List[Contour]:
     """
     returns
     """
     contours = glyph.findall(".//contour")
 
     new_contour_list = []
-    for contour in contours:
+    for idx, contour in enumerate(contours):
         new_contour = Contour()
         list_ttf_instructions = [TTFInstruction(point_xml) for point_xml in contour.findall(".//pt")]
         list_svg_instructions = transform_instruction_ttf_to_svg(list_ttf_instructions)
@@ -439,7 +463,6 @@ def export_alphabet_xml(alphabet: Alphabet, destination: Optional[str] = None) -
         destination = "alphabet.xml"
     exported_alphabet = etree.Element("alphabet")
     for glyph in alphabet.glyphs:
-        # try:
         exported_glyph = etree.SubElement(exported_alphabet, "glyph",
                                           {"name": glyph.name, "viewBox": glyph.viewbox_str})
         for contour in glyph.contours:
