@@ -2,10 +2,17 @@ from .dictionary import svg_dict
 from typing import Optional, Tuple
 from PIL import Image, ImageEnhance
 from .ttf_loader import Alphabet, extract_alphabet
-from typing import Optional
+from typing import Optional, Dict, Callable
 from PIL import Image, ImageEnhance, ImageOps
 from copy import deepcopy
 import json
+from enum import Enum
+
+
+class Mode(Enum):
+    fill = "fill"
+    color = "color"
+    grayscale = "grayscale"
 
 
 class Config:
@@ -23,12 +30,27 @@ class Config:
         self.contrast_enhance: float = 1.5
         self.max_stroke_width: int = 120
         self.min_stroke_width: int = 20
+        self.mode: Mode = Mode.fill
 
         if config_filename is not None:
             with open(config_filename, 'r') as file:
-                content = json.load(file)
-            for key, value in content.items():
+                self.json_config = json.load(file)
+            self.load_settings_from_json()
+            self.load_mode_from_json()
+
+    def load_settings_from_json(self):
+        for key, value in self.json_config.items():
+            try:
                 setattr(self, key, int(value))
+            except Exception:
+                continue
+
+    def load_mode_from_json(self):
+        json_mode = self.json_config.get("mode", None)
+        if json_mode is None:
+            self.mode = Mode.fill
+        else:
+            self.mode = Mode(json_mode)
 
     @property
     def max_x(self):
@@ -66,14 +88,15 @@ class Converter:
             return file.read().replace('\n', ' ')
 
     def get_and_prepare_image(self):
-        raw_image = Image.open(self.image_path)
-        gray_image = raw_image.convert('L')
-        # new
-        enhancer = ImageEnhance.Contrast(gray_image)
-        gray_image = enhancer.enhance(self.config.contrast_enhance)
-        #
-        return gray_image.resize((self.config.picture_dimension_x_mm * self.config.img_pixel_per_mm,
-                                  self.config.picture_dimension_y_mm * self.config.img_pixel_per_mm))
+        image = Image.open(self.image_path)
+        if self.config.mode == Mode.grayscale:
+            image = image.convert('L')
+
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(self.config.contrast_enhance)
+
+        return image.resize((self.config.picture_dimension_x_mm * self.config.img_pixel_per_mm,
+                             self.config.picture_dimension_y_mm * self.config.img_pixel_per_mm))
 
     def get_header(self):
         header = f"""<?xml version="1.0" standalone="no"?>
@@ -100,12 +123,21 @@ class Converter:
 
     def set_strokewidth_of(self, letter):
         abs_center_x, abs_center_y = self.get_projected_center(letter)
-
         color = self.image.getpixel((abs_center_x, abs_center_y))
         b = self.config.max_stroke_width
         m = (self.config.min_stroke_width - b) / 255
         stroke_width = round(color * m + b)
         letter.set_strokewidth(stroke_width)
+
+    def set_color_of(self, letter):
+        abs_center_x, abs_center_y = self.get_projected_center(letter)
+        color = self.image.getpixel((abs_center_x, abs_center_y))
+        if isinstance(color, int):
+            color_scg = f"#{hex(color)[2:]}{hex(color)[2:]}{hex(color)[2:]}"
+        else:
+            color_scg = f"#{hex(color[0])[2:]}{hex(color[1])[2:]}{hex(color[2])[2:]}"
+        letter.set_color(color_scg)
+        letter.set_strokewidth(self.config.min_stroke_width)
 
     def get_body(self):
         body = ""
@@ -129,7 +161,6 @@ class Converter:
                 continue
 
             new_letter.move_to(loc_x, loc_y)
-            self.set_strokewidth_of(new_letter)
 
             body += str(new_letter)
             old_max_x = new_letter.x_coord + new_letter.width
@@ -199,7 +230,12 @@ class Converter:
                     continue
 
                 new_letter.move_to(loc_x, loc_y)
-                self.set_strokewidth_of(new_letter)
+                if self.config.mode == Mode.fill:
+                    self.set_strokewidth_of(new_letter)
+                elif self.config.mode == Mode.grayscale:
+                    self.set_color_of(new_letter)
+                elif self.config.mode == Mode.color:
+                    self.set_color_of(new_letter)
                 body += str(new_letter)
 
                 old_x_max = new_letter.x_coord + new_letter.width
