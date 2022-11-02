@@ -1,6 +1,8 @@
 from .dictionary import svg_dict
+from .ttf_loader import Alphabet, extract_alphabet
 from typing import Optional
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageOps
+from copy import deepcopy
 
 
 class Config:
@@ -9,11 +11,14 @@ class Config:
     svg_scaling: int = 400
     padding_x_mm: int = 10
     padding_y_mm: int = 10
-    space_x: int = 150
-    space_y: int = 1200
+    space_x: int = 80
+    space_y: int = 1000
     backspace: int = 350
     img_pixel_per_mm: int = 1
     contrast_enhance: float = 1.5
+    max_stroke_width: int = 120
+    min_stroke_width: int = 20
+
 
     @property
     def max_x(self):
@@ -33,9 +38,15 @@ class Config:
 
 
 class Converter:
-    def __init__(self, image_path: str, text_path: str, config: Config):
+    def __init__(self, image_path: str, text_path: str, font_path: str, config: Optional[Config] = Config()):
         self.image_path = image_path
         self.text_path = text_path
+        self.font_path = font_path
+        if font_path is None:
+            self.alphabet = svg_dict
+        else:
+            self.alphabet = extract_alphabet(font_path, flip_horizontally=True)
+
         self.text_as_str = self.get_text()
         self.config = config
         self.image = self.get_and_prepare_image()
@@ -79,8 +90,11 @@ class Converter:
 
     def set_strokewidth_of(self, letter):
         abs_center_x, abs_center_y = self.get_projected_center(letter)
+
         color = self.image.getpixel((abs_center_x, abs_center_y))
-        stroke_width = round(color * (-10 / 17) + 200)
+        b = self.config.max_stroke_width
+        m = (self.config.min_stroke_width - b)/255
+        stroke_width = round(color * m + b)
         letter.set_strokewidth(stroke_width)
 
     def get_body(self):
@@ -91,6 +105,7 @@ class Converter:
         letter_idx = 0
         while loc_y < self.config.max_y:
             letter = self.text_as_str[letter_idx % len(self.text_as_str)]
+
             letter_idx += 1
             if letter == " " and not newline:
                 loc_x += self.config.backspace
@@ -99,15 +114,16 @@ class Converter:
             newline = False
 
             try:
-                new_letter = svg_dict[letter]
+                new_letter = deepcopy(self.alphabet[letter])
             except Exception:
                 continue
 
-            new_letter.move_to_location(loc_x, loc_y)
+            new_letter.move_to(loc_x, loc_y)
             self.set_strokewidth_of(new_letter)
 
             body += str(new_letter)
-            old_max_x = new_letter.x_coord + new_letter.box_rel[1]
+            old_max_x = new_letter.x_coord + new_letter.width
+            # todo hier ist ein Fehler. Berechnung neuer x coordinate Fehlerhaft
             loc_x = old_max_x + self.config.space_x
             if loc_x >= self.config.max_x:
                 newline = True
@@ -120,7 +136,7 @@ class Converter:
         length = 0
         for letter in word:
             try:
-                svg_letter = svg_dict[letter]
+                svg_letter = deepcopy(self.alphabet[letter])
                 length += svg_letter.width
                 length += self.config.space_x
             except Exception:
@@ -168,16 +184,16 @@ class Converter:
                     loc_x += new_backspace
                     continue
                 try:
-                    new_letter = svg_dict[letter]
+                    new_letter = deepcopy(self.alphabet[letter])
                 except Exception:
                     continue
 
-                new_letter.move_to_location(loc_x, loc_y)
+                new_letter.move_to(loc_x, loc_y)
                 self.set_strokewidth_of(new_letter)
                 body += str(new_letter)
 
-                old_max_x = new_letter.x_coord + new_letter.box_rel[1]
-                loc_x = old_max_x + self.config.space_x
+                old_x_max = new_letter.x_coord + new_letter.width
+                loc_x = old_x_max + self.config.space_x
 
             loc_x = self.config.min_x
             loc_y += self.config.space_y
@@ -188,7 +204,7 @@ class Converter:
             destination += '.svg'
 
         header = self.get_header()
-        body = self.get_body2()
+        body = self.get_body()
         footer = self.get_footer()
         with open(destination, 'w') as file:
             file.write(header)

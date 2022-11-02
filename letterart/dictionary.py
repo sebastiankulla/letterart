@@ -16,22 +16,22 @@ class Letter:
 
     def __init__(self, element: ET.Element):
         self.d = element.attrib['d'].split()
-        self.box_rel = self.calc_box_rel()
+        self.viewbox_rel = self.calc_box_rel()
         self.width = self.calc_width()
         self.height = self.calc_height()
 
     def calc_width(self):
-        return self.box_rel[1] - self.box_rel[0]
+        return self.viewbox_rel[2] - self.viewbox_rel[0]
 
     def calc_height(self):
-        return self.box_rel[3] - self.box_rel[2]
+        return self.viewbox_rel[3] - self.viewbox_rel[1]
 
     def __str__(self):
         return f"""<path d="{' '.join(self.d)}" stroke="{self.stroke}" stroke-width="{self.stroke_width}" fill="none"/>"""
 
     @property
     def abs_center(self):
-        xmin, xmax, ymin, ymax = self.box_rel
+        xmin, ymin, xmax, ymax = self.viewbox_rel
         xmin += self.x_coord
         ymin += self.y_coord
         xmax += self.x_coord
@@ -62,11 +62,11 @@ class Letter:
         ymin = round(min(ymin_list)) - self.y_coord
         xmax = round(max(xmax_list)) - self.x_coord
         ymax = round(max(ymax_list)) - self.y_coord
-        return xmin, xmax, ymin, ymax
+        return xmin, ymin, xmax, ymax
 
-    def move_to_location(self, x: int, y: int):
-        new_x = x - self.box_rel[0]
-        new_y = y - self.box_rel[3]
+    def move_to(self, x: int, y: int):
+        new_x = x - self.viewbox_rel[0]
+        new_y = y - self.viewbox_rel[3]
 
         self.d[0] = f"M{new_x}"
         self.d[1] = str(new_y)
@@ -78,10 +78,10 @@ class Letter:
         self.stroke = stroke
 
     def draw_box(self):
-        min_x, max_x, min_y, max_y = self.box_rel
-        min_x += self.x_coord
-        min_y += self.y_coord
-        return f"""<rect x="{min_x}" y="{min_y}" width="{self.width}" height="{self.height}" fill="none" stroke="white" stroke-width="25" /> """
+        xmin, xmax, ymin, ymax = self.viewbox_rel
+        xmin += self.x_coord
+        ymin += self.y_coord
+        return f"""<rect x="{xmin}" y="{ymin}" width="{self.width}" height="{self.height}" fill="none" stroke="white" stroke-width="25" /> """
 
 
 svg_dict = {}

@@ -9,5 +9,5 @@ setup(
     author_email="sebastiankulla90@gmail.com",
     description="A tool to make art out of a memorable image and a great backstory.",
     packages=find_packages(),
-    install_requires=['Pillow'],
+    install_requires=['Pillow', 'fonttools'],
 )
