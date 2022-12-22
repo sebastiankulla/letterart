@@ -7,6 +7,7 @@ from copy import deepcopy
 import json
 from enum import Enum
 import os
+from lxml import etree
 
 
 class Mode(Enum):
@@ -33,8 +34,9 @@ class Config:
         self.min_stroke_width: int = 20
         self.mode: Mode = Mode.fill
         self.picture_name: str = ""
-        self.text_file_name: str =""
+        self.text_file_name: str = ""
         self.font: str = ""
+        self.background_color: str = "white"
 
         if config_filename is not None:
             with open(config_filename, 'r') as file:
@@ -42,7 +44,6 @@ class Config:
 
             self.load_mode_from_json()
             self.load_settings_from_json()
-
 
     def load_settings_from_json(self):
         for key, value in self.json_config.items():
@@ -88,8 +89,15 @@ class Converter:
 
         self.text_as_str = self.get_text()
         self.alphabet = extract_alphabet(self.font_path, flip_horizontally=True)
+        self.svg_file = self.create_svg_structure()
 
+    def create_svg_structure(self):
+        svg = etree.Element("svg", {"version": "1.0", "xmlns": "http://www.w3.org/2000/svg",
+                                    "width": f"{self.config.picture_dimension_x_mm}mm",
+                                    "height": f"{self.config.picture_dimension_y_mm}mm",
+                                    "viewBox": f"0 0 {self.config.picture_dimension_x_mm * self.config.svg_scaling} {self.config.picture_dimension_y_mm * self.config.svg_scaling}"})
 
+        return svg
 
     def get_text(self):
         with open(self.text_path, 'r', encoding="utf-8") as file:
@@ -107,15 +115,6 @@ class Converter:
 
         return image.resize((self.config.picture_dimension_x_mm * self.config.img_pixel_per_mm,
                              self.config.picture_dimension_y_mm * self.config.img_pixel_per_mm))
-
-    def get_header(self):
-        header = f"""<?xml version="1.0" standalone="no"?>
-        <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 20010904//EN"
-                "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
-        <svg version="1.0" xmlns="http://www.w3.org/2000/svg"
-             width="{self.config.picture_dimension_x_mm}mm" height="{self.config.picture_dimension_y_mm}mm" viewBox="0 0 {self.config.picture_dimension_x_mm * self.config.svg_scaling} {self.config.picture_dimension_y_mm * self.config.svg_scaling}">
-        """
-        return header
 
     def get_footer(self):
         footer = """
@@ -150,7 +149,7 @@ class Converter:
         letter.set_strokewidth(self.config.min_stroke_width)
 
     def get_body(self):
-        body = ""
+        self.image = self.image.convert("L")
         loc_x = self.config.min_x
         loc_y = self.config.min_y
         newline = True
@@ -171,17 +170,17 @@ class Converter:
                 continue
 
             new_letter.move_to(loc_x, loc_y)
+            self.set_strokewidth_of(new_letter)
+            etree.SubElement(self.svg_file, "path",
+                             {"d": new_letter.path, "stroke": new_letter.stroke,
+                              "stroke-width": str(new_letter.stroke_width), "fill": new_letter.fill})
 
-            body += str(new_letter)
             old_max_x = new_letter.x_coord + new_letter.width
-            # todo hier ist ein Fehler. Berechnung neuer x coordinate Fehlerhaft
             loc_x = old_max_x + self.config.space_x
             if loc_x >= self.config.max_x:
                 newline = True
                 loc_x = self.config.min_x
                 loc_y += self.config.space_y
-
-        return body
 
     def calc_length_of(self, word: str) -> int:
         length = 0
@@ -218,53 +217,80 @@ class Converter:
         else:
             return wordlist[start_idx:] + wordlist[:stop_idx]
 
-    def get_body2(self):
-        body = ""
+    def add_paths(self, parent: etree.Element, attribs: dict):
         loc_x = self.config.min_x
         loc_y = self.config.min_y
+        newline = True
+        letter_idx = 0
+        while loc_y < self.config.max_y:
+            letter = self.text_as_str[letter_idx % len(self.text_as_str)]
 
-        words_list = self.text_as_str.split(' ')
-        start_idx = 0
-        while loc_y <= self.config.max_y:
-            number_words, new_backspace = self.get_idx_and_space_size(words_list, start_idx)
-            words_in_line_list = self.get_from_(words_list, start_idx, number_words)
-            start_idx = (start_idx + number_words) % (len(words_list) - 1)
-            word_in_line_str = " ".join(words_in_line_list)
-            for letter in word_in_line_str:
-                if letter == " ":
-                    loc_x += new_backspace
-                    continue
-                try:
-                    new_letter = deepcopy(self.alphabet[letter])
-                except Exception:
-                    continue
+            letter_idx += 1
+            if letter == " " and not newline:
+                loc_x += self.config.backspace
+                continue
 
-                new_letter.move_to(loc_x, loc_y)
-                if self.config.mode == Mode.fill:
-                    self.set_strokewidth_of(new_letter)
-                elif self.config.mode == Mode.grayscale:
-                    self.set_color_of(new_letter)
-                elif self.config.mode == Mode.color:
-                    self.set_color_of(new_letter)
-                body += str(new_letter)
+            newline = False
 
-                old_x_max = new_letter.x_coord + new_letter.width
-                loc_x = old_x_max + self.config.space_x
+            try:
+                new_letter = deepcopy(self.alphabet[letter])
+            except Exception:
+                continue
 
-            loc_x = self.config.min_x
-            loc_y += self.config.space_y
-        return body
+            new_letter.move_to(loc_x, loc_y)
+
+            path_attribs = {"d": new_letter.path}
+            path_attribs.update(attribs)
+            etree.SubElement(parent, "path", path_attribs)
+
+            old_max_x = new_letter.x_coord + new_letter.width
+            loc_x = old_max_x + self.config.space_x
+            if loc_x >= self.config.max_x:
+                newline = True
+                loc_x = self.config.min_x
+                loc_y += self.config.space_y
+
+    def create_mask(self):
+        defs = etree.SubElement(self.svg_file, "defs")
+        mask = etree.SubElement(defs, "mask", {"id": "mask1"})
+        self.add_paths(mask, {"fill": "white", "stroke": "black", "stroke-width": "20"})
+
+    def add_foreground(self):
+        etree.SubElement(self.svg_file, "rect",
+                         {"x": "0", "y": "0", "width": "100%", "height": "100%",
+                          "fill": self.config.background_color})
+
+    def add_background(self):
+        etree.SubElement(self.svg_file, "image",
+                         {"x": "0", "y": "0", "width": "100%", "height": "100%",
+                          "href": os.path.basename(self.image_path), "mask": "url(#mask1)"})
+
+    def add_grayscale_background(self):
+        image_gray = self.image.convert("L")
+        old_name, ending = self.config.picture_name.split(".")
+        new_name = f"{old_name}_grayscale.{ending}"
+        destination = os.path.join(self.project_dir, new_name)
+        image_gray.save(destination)
+        etree.SubElement(self.svg_file, "image",
+                         {"x": "0", "y": "0", "width": "100%", "height": "100%",
+                          "href": new_name, "mask": "url(#mask1)"})
 
     def save_file(self, destination: Optional[str] = "export.svg"):
         if not destination.endswith('.svg'):
             destination += '.svg'
 
-        destination = os.path.join(self.project_dir,destination)
+        destination = os.path.join(self.project_dir, destination)
 
-        header = self.get_header()
-        body = self.get_body2()
-        footer = self.get_footer()
-        with open(destination, 'w') as file:
-            file.write(header)
-            file.write(body)
-            file.write(footer)
+        if self.config.mode == Mode.color:
+            self.create_mask()
+            self.add_foreground()
+            self.add_background()
+        elif self.config.mode == Mode.grayscale:
+            self.create_mask()
+            self.add_foreground()
+            self.add_grayscale_background()
+        elif self.config.mode == Mode.fill:
+            self.get_body()
+
+        tree = etree.ElementTree(self.svg_file)
+        tree.write(destination, pretty_print=True, xml_declaration=True, encoding="utf-8")

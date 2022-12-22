@@ -144,8 +144,27 @@ class Glyph:
         self.x_coord: int = 0
         self.y_coord: int = 0
 
-    def merge_contours(self):
+    @property
+    def fill(self):
+        return self.contours[0].fill
 
+    @property
+    def stroke_width(self):
+        return self.contours[0].stroke_width
+
+    @property
+    def stroke(self):
+        return self.contours[0].stroke
+
+    @property
+    def path(self):
+        contour = self.contours[0]
+        result = ""
+        for instruction in contour.svg_instructions:
+            result += f"""{instruction.command.value} {" ".join(map(str, instruction.coordinates))} """
+        return result
+
+    def merge_contours(self):
         new_contour = Contour()
         new_contour.add_svg_instructions(self.contours[0].svg_instructions)
         for idx_contour in range(1, len(self.contours)):
