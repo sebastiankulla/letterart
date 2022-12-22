@@ -148,39 +148,39 @@ class Converter:
         letter.set_color(color_scg)
         letter.set_strokewidth(self.config.min_stroke_width)
 
+
     def get_body(self):
         self.image = self.image.convert("L")
         loc_x = self.config.min_x
         loc_y = self.config.min_y
-        newline = True
-        letter_idx = 0
+        start_idx = 0
+        words_list = self.text_as_str.split(' ')
         while loc_y < self.config.max_y:
-            letter = self.text_as_str[letter_idx % len(self.text_as_str)]
+            number_words, new_backspace = self.get_idx_and_space_size(words_list, start_idx)
+            words_in_line_list = self.get_from_(words_list, start_idx, number_words)
+            start_idx = (start_idx + number_words) % (len(words_list) - 1)
+            word_in_line_str = " ".join(words_in_line_list)
+            for letter in word_in_line_str:
+                if letter == " ":
+                    loc_x += new_backspace
+                    continue
+                try:
+                    new_letter = deepcopy(self.alphabet[letter])
+                except Exception:
+                    continue
 
-            letter_idx += 1
-            if letter == " " and not newline:
-                loc_x += self.config.backspace
-                continue
+                new_letter.move_to(loc_x, loc_y)
 
-            newline = False
+                self.set_strokewidth_of(new_letter)
+                etree.SubElement(self.svg_file, "path",
+                                 {"d": new_letter.path, "stroke": new_letter.stroke,
+                                  "stroke-width": str(new_letter.stroke_width), "fill": new_letter.fill})
 
-            try:
-                new_letter = deepcopy(self.alphabet[letter])
-            except Exception:
-                continue
+                old_x_max = new_letter.x_coord + new_letter.width
+                loc_x = old_x_max + self.config.space_x
 
-            new_letter.move_to(loc_x, loc_y)
-            self.set_strokewidth_of(new_letter)
-            etree.SubElement(self.svg_file, "path",
-                             {"d": new_letter.path, "stroke": new_letter.stroke,
-                              "stroke-width": str(new_letter.stroke_width), "fill": new_letter.fill})
-
-            old_max_x = new_letter.x_coord + new_letter.width
-            loc_x = old_max_x + self.config.space_x
-            if loc_x >= self.config.max_x:
-                newline = True
-                loc_x = self.config.min_x
-                loc_y += self.config.space_y
+            loc_x = self.config.min_x
+            loc_y += self.config.space_y
 
     def calc_length_of(self, word: str) -> int:
         length = 0
@@ -220,35 +220,32 @@ class Converter:
     def add_paths(self, parent: etree.Element, attribs: dict):
         loc_x = self.config.min_x
         loc_y = self.config.min_y
-        newline = True
-        letter_idx = 0
+        start_idx = 0
+        words_list = self.text_as_str.split(' ')
         while loc_y < self.config.max_y:
-            letter = self.text_as_str[letter_idx % len(self.text_as_str)]
+            number_words, new_backspace = self.get_idx_and_space_size(words_list, start_idx)
+            words_in_line_list = self.get_from_(words_list, start_idx, number_words)
+            start_idx = (start_idx + number_words) % (len(words_list) - 1)
+            word_in_line_str = " ".join(words_in_line_list)
+            for letter in word_in_line_str:
+                if letter == " ":
+                    loc_x += new_backspace
+                    continue
+                try:
+                    new_letter = deepcopy(self.alphabet[letter])
+                except Exception:
+                    continue
 
-            letter_idx += 1
-            if letter == " " and not newline:
-                loc_x += self.config.backspace
-                continue
+                new_letter.move_to(loc_x, loc_y)
+                path_attribs = {"d": new_letter.path}
+                path_attribs.update(attribs)
+                etree.SubElement(parent, "path", path_attribs)
 
-            newline = False
+                old_x_max = new_letter.x_coord + new_letter.width
+                loc_x = old_x_max + self.config.space_x
 
-            try:
-                new_letter = deepcopy(self.alphabet[letter])
-            except Exception:
-                continue
-
-            new_letter.move_to(loc_x, loc_y)
-
-            path_attribs = {"d": new_letter.path}
-            path_attribs.update(attribs)
-            etree.SubElement(parent, "path", path_attribs)
-
-            old_max_x = new_letter.x_coord + new_letter.width
-            loc_x = old_max_x + self.config.space_x
-            if loc_x >= self.config.max_x:
-                newline = True
-                loc_x = self.config.min_x
-                loc_y += self.config.space_y
+            loc_x = self.config.min_x
+            loc_y += self.config.space_y
 
     def create_mask(self):
         defs = etree.SubElement(self.svg_file, "defs")
